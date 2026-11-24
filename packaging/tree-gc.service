@@ -1,0 +1,14 @@
+[Unit]
+Description=tree-gc: collect stale worktrees, branches, build artifacts, agent scratch and tmp
+Documentation=https://github.com/imabee101/tree-gc#readme
+
+[Service]
+Type=oneshot
+SyslogIdentifier=tree-gc
+ExecStart=%h/.local/bin/tree-gc run
+# Stay out of the way of interactive work.
+Nice=19
+IOSchedulingClass=idle
+CPUSchedulingPolicy=batch
+MemoryMax=1G
+TimeoutStartSec=2h

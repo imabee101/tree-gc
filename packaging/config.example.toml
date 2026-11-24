@@ -1,0 +1,263 @@
+# tree-gc configuration  (~/.config/tree-gc/config.toml)
+#
+# Rollout plan:
+#   1. enforce = false (shadow mode). Let the timer run for a week and review
+#      `tree-gc plan` / ~/.local/state/tree-gc/history.jsonl.
+#   2. enforce = true with enforce_kinds = ["stale_worktree_meta", "branch"]
+#      (branch tips are archived and worktree metadata is quarantined).
+#   3. Add "artifact" and "scratch", then "worktree" and "tmp_entry".
+#
+# Restore archived branches or quarantined entries with tree-gc restore.
+# Hard disk pressure can purge quarantine before normal expiry. Direct deletes
+# of artifacts, selected scratch caches and Docker objects have no general undo.
+
+enforce = false
+enforce_kinds = ["stale_worktree_meta", "branch", "artifact", "scratch", "worktree", "tmp_entry"]
+
+state_dir = "~/.local/state/tree-gc"
+quarantine_dir = "~/.local/share/tree-gc/quarantine"
+quarantine_days = 14
+
+# Minimum idle age for ordinary age-based cleanup. Disk pressure has separate rules.
+active_days = 2
+max_actions_per_run = 200
+max_gib_per_run = 200.0
+
+# `touch .tree-gc-keep` in any directory to protect it and everything below it.
+keep_marker = ".tree-gc-keep"
+protect_paths = []
+
+# Other cleaners' lock files. tree-gc holds them while deleting build output,
+# so it never sweeps the same target/ as e.g. the build-hygiene timer.
+interop_locks = ["/tmp/build-hygiene.lock"]
+
+# debug | info | warn | error. Log: ~/.local/state/tree-gc/tree-gc.log and the
+# journal. `tree-gc log --level warn` shows problems.
+log_level = "info"
+
+# Be gentle with the disk. After each deletion, pause this many seconds per
+# GiB deleted (0.2s minimum, throttle_max_secs maximum), so btrfs commits in
+# small steps. Before each deletion, wait while the kernel's I/O pressure
+# (/proc/pressure/io, "some avg10" %) is above throttle_max_io_psi. If it
+# doesn't ease within throttle_io_wait_secs, the rest of the run is deferred.
+throttle_secs_per_gib = 1.0
+throttle_max_secs = 30.0
+throttle_max_io_psi = 25.0
+throttle_io_wait_secs = 60
+
+# Built-in defaults also scan shell rc files, systemd units, crontab, desktop
+# entries and agent configs (~/.claude.json, ~/.codex/config.toml, ...) for
+# mentions of a path before touching it. Override with:
+# reference_files = ["~/.bashrc", "~/.config/systemd/user", ...]
+# agent_session_dirs = ["~/.claude/projects", "/tmp/claude-{uid}"]
+# removable_prefixes = ["/run/media", "/media", "/mnt"]
+
+[[roots]]
+path = "~/projects"
+kind = "tree"
+max_depth = 6
+
+# Grok keeps its agent worktrees here; scanned as git worktrees, not as files.
+[[roots]]
+path = "~/.grok/worktrees"
+kind = "tree"
+max_depth = 4
+
+[[roots]]
+path = "/tmp"
+kind = "tmp"
+
+# --- Agent scratch: children of these directories age out individually. ---
+# keep_newest keeps the N most recent entries no matter how old they are (FIFO window).
+
+[[scratch]]
+name = "claude file-history (edit checkpoints)"
+path = "~/.claude/file-history"
+stale_days = 30
+keep_newest = 10
+
+[[scratch]]
+name = "claude paste-cache"
+path = "~/.claude/paste-cache"
+stale_days = 30
+keep_newest = 10
+
+[[scratch]]
+name = "claude shell-snapshots"
+path = "~/.claude/shell-snapshots"
+stale_days = 14
+keep_newest = 5
+
+[[scratch]]
+name = "claude session-env"
+path = "~/.claude/session-env"
+stale_days = 14
+keep_newest = 10
+
+[[scratch]]
+name = "claude todos"
+path = "~/.claude/todos"
+stale_days = 30
+keep_newest = 20
+
+[[scratch]]
+name = "claude debug logs"
+path = "~/.claude/debug"
+stale_days = 14
+keep_newest = 10
+
+[[scratch]]
+name = "claude per-project tmp"
+path = "/tmp/claude-{uid}"
+stale_days = 3
+keep_newest = 3
+exclude = ["bundled-skills"]
+
+[[scratch]]
+name = "codex tmp"
+path = "~/.codex/tmp"
+stale_days = 7
+
+[[scratch]]
+name = "codex shell snapshots"
+path = "~/.codex/shell_snapshots"
+stale_days = 14
+
+[[scratch]]
+name = "grok background task logs"
+path = "~/.grok/long-running-background-tasks"
+stale_days = 14
+keep_newest = 20
+
+[[scratch]]
+name = "grok relocations"
+path = "~/.grok/relocations"
+stale_days = 14
+keep_newest = 50
+
+[[scratch]]
+name = "grok marketplace cache"
+path = "~/.grok/marketplace-cache"
+stale_days = 30
+action = "delete"
+
+# Transcripts can't be regenerated. They are DISABLED by default. If you enable
+# them, keep the quarantine action to retain a restore window. Claude Code also has its own
+# `cleanupPeriodDays` setting for ~/.claude/projects.
+[[scratch]]
+name = "grok session transcripts"
+path = "~/.grok/sessions"
+enabled = false
+stale_days = 90
+keep_newest = 50
+
+[[scratch]]
+name = "codex session transcripts"
+path = "~/.codex/sessions"
+enabled = false
+stale_days = 90
+keep_newest = 50
+
+[[scratch]]
+name = "claude project transcripts"
+path = "~/.claude/projects"
+enabled = false
+stale_days = 120
+keep_newest = 10
+
+[worktrees]
+enabled = true
+stale_days = 7
+honor_locks = true
+break_dead_pid_locks = true
+strip_artifacts = true
+# Ignored files that don't block quarantining a worktree. Deliberately NOT
+# .idea (shelved changes), .vscode, *.swp (crash recovery).
+disposable_ignored = ["*.log", "*.tmp", "*.pyc", ".DS_Store", "*.profraw", ".coverage", "coverage"]
+
+[branches]
+enabled = true
+stale_days = 30
+protected = ["main", "master", "develop", "dev", "trunk", "release*", "stable*"]
+include_squash_merged = true
+archive_prefix = "refs/tree-gc/archive/"
+
+[artifacts]
+enabled = true
+stale_days = 14
+# A CACHEDIR.TAG alone is NOT proof of regenerable content (people tag dataset
+# and archive dirs to exclude them from backups). If enabled, such dirs must
+# also be git-ignored inside a repo.
+respect_cachedir_tag = false
+# Keep release executables from deleted Cargo target/ dirs in quarantine
+# (`tree-gc restore <id>` puts them back without rebuilding).
+preserve_release_binaries = true
+
+[artifacts.markers]
+target = "Cargo.toml"
+node_modules = "package.json"
+".next" = "package.json"
+".turbo" = "package.json"
+".parcel-cache" = "package.json"
+".zig-cache" = "build.zig"
+"__pycache__" = ""
+".pytest_cache" = ""
+".mypy_cache" = ""
+".ruff_cache" = ""
+
+[tmp]
+enabled = true
+stale_days = 7
+only_own = true
+max_walk_entries = 100000
+exclude = ["systemd-private-*", ".X*-unix", ".ICE-unix", ".font-unix", ".XIM-unix", "ssh-*", "tmux-*", "krb5*", "pulse-*", "claude-*", "codex-*", "grok-*", ".tree-gc-quarantine*", ".tree-gc-deleting-*"]
+
+# Disk-pressure relief (`tree-gc guard`, every 5 minutes). Acts early: below
+# soft_free_percent (or when the fill-rate trend predicts it) tiers 1-3 run;
+# below low_free_percent all tiers. Lowest-risk tier first, real free space
+# re-measured after every step, stopping at target_free_percent. Order:
+#   1. docker build cache unused >= pressure_build_cache_hours
+#   2. build output already eligible (stale)
+#   3. build output untouched for >= min_age_days (least recently used first)
+#   4. `cargo sweep` inside targets that are still being worked on
+#   5. quarantine purged early: worktrees (rebuildable from git) first
+#   6. docker images unused by any container, created >= pressure_image_days ago
+# Early purge can remove quarantined entries before quarantine_days elapses.
+[pressure]
+enabled = true
+# Start early with the lowest-risk tiers (1-3)...
+soft_free_percent = 20.0
+# ...all tiers below this (or below low_free_gib on disks >= 64G, capped at 15%)...
+low_free_percent = 10.0
+low_free_gib = 30.0
+# ...and keep going until this much is free.
+target_free_percent = 25.0
+critical_free_percent = 5.0
+# Don't wait for the threshold: if the fill rate over the last
+# trend_window_hours would cross soft/low within predict_horizon_hours, act now.
+predict_horizon_hours = 24.0
+trend_window_hours = 6.0
+min_age_days = 2
+sweep_active_targets = true
+purge_quarantine_early = true
+# No-progress brake: after deletions report this much, free space must have
+# risen by a tenth of it, or relief stops and pauses (btrfs snapshots keep
+# deleted data alive).
+stall_min_gib = 20.0
+# At most this much per relief pass; the guard runs every 5 minutes, so
+# relief proceeds in steps instead of one burst.
+max_gib_per_relief = 50.0
+notify = true
+
+# Docker objects untouched for a long time. Volumes are NEVER removed (they
+# hold databases); they're only reported.
+[docker]
+enabled = true
+build_cache_days = 30
+image_days = 60
+container_days = 90
+max_container_rw_mb = 50
+keep_label = "tree-gc.keep"
+pressure_build_cache_hours = 48
+pressure_image_days = 7
+timeout_secs = 600

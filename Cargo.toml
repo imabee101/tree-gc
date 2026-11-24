@@ -1,0 +1,25 @@
+[package]
+name = "tree-gc"
+version = "0.1.0"
+edition = "2021"
+description = "Plan and clean up stale Git worktrees, branches and build output on Linux"
+license = "MIT"
+repository = "https://github.com/imabee101/tree-gc"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+libc = "0.2"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+walkdir = "2"
+
+[dev-dependencies]
+tempfile = "3"
+filetime = "0.2"
+
+[profile.release]
+lto = true
+codegen-units = 1

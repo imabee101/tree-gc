@@ -1,0 +1,13 @@
+[Unit]
+Description=tree-gc guard: watch free space, relieve disk pressure early (lowest risk first)
+Documentation=https://github.com/imabee101/tree-gc#readme
+
+[Service]
+Type=oneshot
+SyslogIdentifier=tree-gc-guard
+ExecStart=%h/.local/bin/tree-gc guard
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+MemoryMax=1G
+TimeoutStartSec=1h
